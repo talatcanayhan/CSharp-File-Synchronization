@@ -1,108 +1,132 @@
-﻿using System.Collections;
+﻿using System;
 using System.IO;
+using System.Linq;
+using System.Timers;
 
-#region Get Paths From User
-static string GetPathFromUser(string pathType, bool isTextFile)
+
+// Check if the User initiated the program with valid command line arguments.
+if (args.Length != 4)
 {
-    string path;
-    while (true)
-    {
-        Console.Write($"Please enter the {pathType} path: ");
-        path = Console.ReadLine();
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            Console.WriteLine("Path cannot be empty. Try again.");
-            continue;
-        }
-
-        try
-        {
-            // Normalize the path
-            path = Path.GetFullPath(path);
-
-            // Check if path is valid by trying to get full path, 
-            // and optionally check if it's accessible or creatable
-            if (!Directory.Exists(path))
-            {
-                Console.WriteLine("Directory does not exist. Try again. ");
-                // Directory.CreateDirectory(path);
-            }
-            else if (isTextFile && !path.EndsWith(".txt"))
-            {
-                Console.WriteLine("Please enter a valid txt file. ");
-            }
-            else
-            {
-                break; // Valid path entered, exit loop
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Invalid path: {ex.Message}. Try again.");
-        }
-
-    }
-
-    return path;
+    Console.WriteLine("Usage: program <source> <replica> <logfile> <interval_seconds>");
+    return;
 }
 
-string sourcePath = GetPathFromUser("source");
-string replicaPath = GetPathFromUser("replica");
-string logfilePath = GetPathFromUser("logfile");
-#endregion
+string sourcePath = args[0];
+string replicaPath = args[1];
+string logfilePath = args[2];
 
-#region Get Synchronization Frequency From The User
-
-string frequency;
-string[] frequencyTypes = { "second", "minute", "hour", "day", "week" };
-
-
-while (true)
+if (!int.TryParse(args[3], out int intervalSeconds) || intervalSeconds <= 0)
 {
-    Console.Write("Please enter the frequency type(second, hour, day, week)): ");
-    frequencyPreference = Console.ReadLine();
-
-    if (!frequencyTypes.Contains(frequencyPreference.ToLower()))
-    {
-        Console.WriteLine("You have entered invalid frequency type. Try again.");
-        continue;
-    }
-
-    Console.Write("Please enter the frequency (in integer): ");
-    frequency = Console.ReadLine();
-
-
-    if (int.TryParse(frequency, out int number))
-    {
-        Console.WriteLine($"The replica folder will be synchronized with source folder in every {number} {frequencyPreference}(s)");
-        break;
-    }
-    else
-    {
-        Console.WriteLine("Please enter a valid integer number");
-    }
+    Console.WriteLine("Invalid interval. Please provide a positive integer for seconds.");
+    return;
 }
 
-switch (frequencyPreference)
+// Validate source path exists
+if (!Directory.Exists(sourcePath))
 {
-    case "second":
-        break;
+    Console.WriteLine($"Source directory does not exist: {sourcePath}");
+    return;
+}
 
-    case "minute":
-        break;
+// Validate log file path
+try
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(logfilePath));
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Invalid log file path: {ex.Message}");
+    return;
+}
 
-    case "hour":
-        break;
+// --- Setup timer and start synchronization ---
+double intervalMilliseconds = intervalSeconds * 1000.0;
 
-    case "day":
-        break;
+System.Timers.Timer syncTimer = new System.Timers.Timer(intervalMilliseconds);
+syncTimer.AutoReset = true;
 
-    case "week":
-        break;
+bool isSyncRunning = false;
 
-    default:
+syncTimer.Elapsed += (sender, e) =>
+{
+    if (isSyncRunning) return; // Skip if already running
 
-        break;
+    isSyncRunning = true;
+    try
+    {
+        SyncFolders(sourcePath, replicaPath, logfilePath);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error during synchronization: {ex.Message}");
+    }
+    finally
+    {
+        isSyncRunning = false;
+    }
+};
+
+syncTimer.Start();
+
+Console.WriteLine($"Synchronization started. Press Enter to stop and exit.");
+Console.ReadLine();
+
+syncTimer.Stop();
+syncTimer.Dispose();
+
+#region Synchronizing function
+static void SyncFolders(string source, string replica, string logFilePath)
+{
+    // Ensure replica exists
+    Directory.CreateDirectory(replica);
+
+    using (StreamWriter logWriter = new StreamWriter(logFilePath, append: true))
+    {
+        // Helper for logging to console + file
+        void Log(string message)
+        {
+            Console.WriteLine(message);
+            logWriter.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}");
+        }
+
+        // Copy new and updated files from source to replica
+        foreach (var sourceFile in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string relativePath = Path.GetRelativePath(source, sourceFile);
+            string replicaFile = Path.Combine(replica, relativePath);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(replicaFile)!);
+
+            if (!File.Exists(replicaFile) ||
+                File.GetLastWriteTimeUtc(sourceFile) > File.GetLastWriteTimeUtc(replicaFile))
+            {
+                File.Copy(sourceFile, replicaFile, true);
+                Log($"Copied: {relativePath}");
+            }
+        }
+
+        // Remove files that are in replica but not in source
+        foreach (var replicaFile in Directory.GetFiles(replica, "*", SearchOption.AllDirectories))
+        {
+            string relativePath = Path.GetRelativePath(replica, replicaFile);
+            string sourceFile = Path.Combine(source, relativePath);
+
+            if (!File.Exists(sourceFile))
+            {
+                File.Delete(replicaFile);
+                Log($"Deleted: {relativePath}");
+            }
+        }
+
+        // Remove empty directories in replica
+        foreach (var dir in Directory.GetDirectories(replica, "*", SearchOption.AllDirectories))
+        {
+            if (Directory.GetFiles(dir).Length == 0 && Directory.GetDirectories(dir).Length == 0)
+            {
+                Directory.Delete(dir, true);
+                Log($"Removed empty folder: {Path.GetRelativePath(replica, dir)}");
+            }
+        }
+    }
 }
 #endregion
