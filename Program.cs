@@ -2,7 +2,7 @@
 using System.IO;
 
 #region Get Paths From User
-static string GetPathFromUser(string pathType)
+static string GetPathFromUser(string pathType, bool isTextFile)
 {
     string path;
     while (true)
@@ -25,11 +25,17 @@ static string GetPathFromUser(string pathType)
             // and optionally check if it's accessible or creatable
             if (!Directory.Exists(path))
             {
-                Console.WriteLine("Directory does not exist. Creating it...");
-                Directory.CreateDirectory(path);
+                Console.WriteLine("Directory does not exist. Try again. ");
+                // Directory.CreateDirectory(path);
             }
-
-            break; // Valid path entered, exit loop
+            else if (isTextFile && !path.EndsWith(".txt"))
+            {
+                Console.WriteLine("Please enter a valid txt file. ");
+            }
+            else
+            {
+                break; // Valid path entered, exit loop
+            }
         }
         catch (Exception ex)
         {
@@ -47,35 +53,52 @@ string logfilePath = GetPathFromUser("logfile");
 #endregion
 
 #region Get Synchronization Frequency From The User
-string frequencyPreference = "";
-string[] frequencyOptions = { "minutely, hourly", "daily", "weekly" };
 
-Console.Write("Please enter the frequency which you prefer the synchronization be(hourly, daily, weekly)): ");
+string frequency;
+string[] frequencyTypes = { "second", "minute", "hour", "day", "week" };
+
+
 while (true)
 {
-    if (frequencyOptions.Contains(frequencyPreference.ToLower()))
+    Console.Write("Please enter the frequency type(second, hour, day, week)): ");
+    frequencyPreference = Console.ReadLine();
+
+    if (!frequencyTypes.Contains(frequencyPreference.ToLower()))
     {
-        break;
+        Console.WriteLine("You have entered invalid frequency type. Try again.");
+        continue;
     }
 
+    Console.Write("Please enter the frequency (in integer): ");
+    frequency = Console.ReadLine();
+
+
+    if (int.TryParse(frequency, out int number))
+    {
+        Console.WriteLine($"The replica folder will be synchronized with source folder in every {number} {frequencyPreference}(s)");
+        break;
+    }
     else
     {
-        Console.WriteLine("You have entered invalid frequency. Try again.");
+        Console.WriteLine("Please enter a valid integer number");
     }
 }
 
 switch (frequencyPreference)
 {
-    case "minutely":
+    case "second":
         break;
 
-    case "hourly":
+    case "minute":
         break;
 
-    case "daily":
+    case "hour":
         break;
 
-    case "weekly":
+    case "day":
+        break;
+
+    case "week":
         break;
 
     default:
